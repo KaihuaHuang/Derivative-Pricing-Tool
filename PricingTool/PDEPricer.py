@@ -7,6 +7,7 @@ Created on Mon Apr  1 12:17:57 2019
 
 import numpy as np
 from scipy.sparse import diags
+import matplotlib.pyplot as plt
 
 class PDEPricer():
     r = 0.025
@@ -49,8 +50,11 @@ class PDEPricer():
     
     def vega(self,deltaVol = 0.001):
         price = self.Vmatrix[int(self.stockGridNum/2),0]
+        initialVmatrix = self.Vmatrix
         self.vol = self.vol + deltaVol
-        priceUp = self.optionVal(self.vanillaPayoff(),self.stockGridNum,self.timeGridNum,self.method,self.logSpace)
+        priceUp = self.optionVal(self.vanillaPayoff(),self.stockGridNum,self.timeGridNum,self.method,self.logSpace,self.American)
+        self.vol = self.vol - deltaVol
+        self.Vmatrix = initialVmatrix
         return (priceUp-price)/deltaVol
     
     def theta(self):
@@ -60,9 +64,11 @@ class PDEPricer():
     
     def rho(self, deltaRf = 0.001):
         price = self.Vmatrix[int(self.stockGridNum/2),0]
+        initialVmatrix = self.Vmatrix
         PDEPricer.r = PDEPricer.r + deltaRf
-        priceUp = self.optionVal(self.vanillaPayoff(),self.stockGridNum,self.timeGridNum,self.method,self.logSpace)
+        priceUp = self.optionVal(self.vanillaPayoff(),self.stockGridNum,self.timeGridNum,self.method,self.logSpace,self.American)
         PDEPricer.r = PDEPricer.r - deltaRf
+        self.Vmatrix = initialVmatrix
         return (priceUp-price)/deltaRf
     
     def greeks(self,deltaVol =  0.001, deltaRf = 0.001):
@@ -74,7 +80,7 @@ class PDEPricer():
         result['theta'] = self.theta()
         return result
     
-    def optionVal(self, payoff, stockGridNum = 100, timeGridNum = 500, method = 'Explicit', logSpace = False):
+    def optionVal(self, payoff, stockGridNum = 100, timeGridNum = 500, method = 'Explicit', logSpace = False, American = True):
         '''
         2*S0 should larger than K for call option
         '''
@@ -86,12 +92,14 @@ class PDEPricer():
         n = np.arange(stockGridNum+1)
         self.logSpace = logSpace
         self.payoff = payoff
+        self.American = American
         if logSpace:
             mu = PDEPricer.r - self.d - 0.5*self.vol**2
             x_max = self.vol*np.sqrt(self.T)*5 
             self.dx = 2*x_max/stockGridNum
             self.X = np.linspace(-x_max,x_max,stockGridNum+1)
             V = np.array(list(map(payoff,np.exp(self.X)*self.S0)))
+            VInitial = V 
             Vmatrix = np.zeros((stockGridNum+1,timeGridNum+1))
             Vmatrix[:,-1] = V
             if method == 'Crank-Nicolson':
@@ -104,6 +112,9 @@ class PDEPricer():
                 Binv = np.linalg.inv(B)
                 for j in range(timeGridNum):
                     V = Binv.dot(A).dot(V)
+                    if American:
+                        index = V < VInitial
+                        V[index] = VInitial[index]
                     V[0] = payoff(self.S0*np.exp(self.X[0]))
                     V[stockGridNum] = payoff(self.S0*self.X[-1])
                     Vmatrix[:,-2-j] = V
@@ -118,6 +129,9 @@ class PDEPricer():
                     0.5*(k*self.vol*self.vol-h*mu)*np.eye(stockGridNum+1,k=-1)
                 for j in range(timeGridNum):
                     V = C.dot(V)
+                    if American:
+                        index = V < VInitial
+                        V[index] = VInitial[index]
                     V[0] = payoff(self.S0*np.exp(self.X[0]))
                     V[stockGridNum] = payoff(self.S0*self.X[-1])
                     Vmatrix[:,-2-j] = V
@@ -133,6 +147,9 @@ class PDEPricer():
                 Dinv = np.linalg.inv(D)
                 for j in range(timeGridNum):
                     V = Dinv.dot(V)
+                    if American:
+                        index = V < VInitial
+                        V[index] = VInitial[index]
                     V[0] = payoff(self.S0*np.exp(self.X[0]))
                     V[stockGridNum] = payoff(self.S0*self.X[-1])
                     Vmatrix[:,-2-j] = V
@@ -147,8 +164,8 @@ class PDEPricer():
             s_max = 2*self.S0
             self.ds = s_max/stockGridNum
             self.S = np.linspace(0,s_max,stockGridNum+1)
-
             V = np.array(list(map(payoff, self.S)))
+            VInitial = V 
             Vmatrix = np.zeros((stockGridNum+1,timeGridNum+1))
             Vmatrix[:,-1] = V
             if method == 'Explicit':
@@ -159,6 +176,9 @@ class PDEPricer():
                 A = diags([pc,pu[:-1],pd[1:]],[0,1,-1]).toarray()
                 for j in range(timeGridNum):
                     V = A.dot(V)
+                    if American:
+                        index = V < VInitial
+                        V[index] = VInitial[index]
                     V[0]=payoff(self.S[0])
                     V[stockGridNum] = payoff(s_max*np.exp(self.T*(PDEPricer.r-self.d)))*np.exp(PDEPricer.r*self.dt*(timeGridNum-j-1))
                     Vmatrix[:,-2-j] = V
@@ -174,6 +194,9 @@ class PDEPricer():
                 Binv = np.linalg.inv(B)
                 for j in range(timeGridNum):
                     V = Binv.dot(V)
+                    if American:
+                        index = V < VInitial
+                        V[index] = VInitial[index]
                     V[0]=payoff(self.S[0])
                     V[stockGridNum] = payoff(s_max*np.exp(self.T*(PDEPricer.r-self.d)))*np.exp(PDEPricer.r*self.dt*(timeGridNum-j-1))
                     Vmatrix[:,-2-j] = V
@@ -183,18 +206,36 @@ class PDEPricer():
                 raise Exception('Avalible Method: Explicit, Implicit')
             
             
-        
+    def plot(self, interval = 50, stockCut = 4, logSpace = True):
+        iterations = int(self.timeGridNum/interval) + 1
+        cut = int(self.stockGridNum/stockCut)
+        if logSpace:
+            for i in range(iterations):
+                if i == iterations-1:
+                    plt.plot(self.S0*np.exp(self.X[cut:-cut]),self.Vmatrix[cut:-cut,0])
+                else:
+                    plt.plot(self.S0*np.exp(self.X[cut:-cut]),self.Vmatrix[cut:-cut,-i*interval-1])
+                plt.title(f'Option Value when TTM = {round(min(i*interval*self.dt,self.T),1)}')
+                plt.show()
+        else:
+            for i in range(iterations):
+                if i == iterations-1:
+                    plt.plot(self.S[cut:-cut],self.Vmatrix[cut:-cut,0])
+                else:
+                    plt.plot(self.S[cut:-cut],self.Vmatrix[cut:-cut,-i*interval-1])
+                plt.title(f'Option Value when TTM = {round(min(i*interval*self.dt,self.T),1)}')
+                plt.show()
             
-'''    
-S0 = 110
+
+S0 = 90
 K = 100
 vol = 0.3
 T = 1
-r = 0.05
-d = 0.0
+r = 0.01
+d = 0.015
 
-(S0, K, T, vol, r, d) = (10, 10, 1, 0.3, 0., 0.2)
+# (S0, K, T, vol, r, d) = (10, 10, 1, 0.3, 0., 0.2)
 PDE = PDEPricer(S0, K, vol, d, T, 1, r)
-print(PDE.optionVal(PDE.vanillaPayoff(),500,500,method = 'Crank-Nicolson',logSpace = True))
+print(PDE.optionVal(PDE.vanillaPayoff(),500,500,method = 'Crank-Nicolson',logSpace = True, American = True))
 print(PDE.greeks())
-'''
+#print(PDE.plot())

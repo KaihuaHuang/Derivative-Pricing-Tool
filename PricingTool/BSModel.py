@@ -97,15 +97,15 @@ class BlackScholes:
         result['theta'] = self.theta(vol)
         return result
      
-'''
+
 S0 = 110
 K = 100
 vol = 0.3
 T = 1
 r = 0.05
 d = 0.0
-(S0, K, T, vol, r, d) = (10, 10, 1, 0.3, 0., 0.2)
-option = BlackSchole(S0, K, vol, d, T, 1, r)
+#(S0, K, T, vol, r, d) = (10, 10, 1, 0.3, 0., 0.2)
+option = BlackScholes(S0, K, vol, d, T, -1, r)
 print('BSprice:',option.bsValue())
 
 print('delta:',option.delta())
@@ -114,4 +114,3 @@ print('vega:',option.vega())
 print('theta:',option.theta())
 print('rho:',option.rho())
 print(option.greeks())
-'''
