@@ -98,12 +98,13 @@ class BlackScholes:
         return result
      
 
-S0 = 110
-K = 100
-vol = 0.3
+S0 = 100
+K = 85
+B = 120
+vol = 1
 T = 1
-r = 0.05
-d = 0.0
+r = 0.02
+d = 0.01
 #(S0, K, T, vol, r, d) = (10, 10, 1, 0.3, 0., 0.2)
 option = BlackScholes(S0, K, vol, d, T, -1, r)
 print('BSprice:',option.bsValue())
